@@ -1,54 +1,73 @@
 name: Deploy EKS via Terraform
 
+# Trigger the workflow on every push to the main branch
 on:
   push:
     branches: [main]
 
+# Permissions needed for GitHub OIDC authentication with AWS
 permissions:
   id-token: write
   contents: read
 
+# Set environment variables for AWS and Terraform backend configuration
 env:
   AWS_REGION: us-east-1
-  BUCKET_NAME: physicstutors-002
-  TF_KEY: eks/terraform.tfstate
-  TF_REGION: us-east-1
+  BUCKET_NAME: physicstutors-002                     # S3 bucket to store Terraform state
+  TF_KEY: eks/terraform.tfstate                      # Path to the state file in the bucket
+  TF_REGION: us-east-1                               # AWS region for the backend and resources
 
 jobs:
   terraform:
     name: Terraform Plan & Apply
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest                           # Runner environment
 
     steps:
+      # Step 1: Checkout your source code
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Step 2: Configure AWS credentials using OIDC and IAM role
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::755852738025:role/Aws-Githubaction-Connection
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_REGION }}
 
+      # Step 3: Set up Terraform CLI
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      # Step 4: Initialize Terraform with remote backend config
       - name: Terraform Init
         run: |
           terraform init \
           -backend-config="bucket=${{ env.BUCKET_NAME }}" \
-          -backend-config="key=${{ env.TF_KEY }}"  \
-          -backend-config="region=us-east-1"
+          -backend-config="key=${{ env.TF_KEY }}" \
+          -backend-config="region=${{ env.TF_REGION }}"
 
+      # Step 5: Validate Terraform configuration files
       - name: Terraform Validate
         run: terraform validate
 
+      # Step 6: Run Terraform plan to preview infrastructure changes
       - name: Terraform Plan
-        run: terraform plan
+        run: terraform plan -out=tfplan.out
 
-#      - name: Terraform Destroy
-#        run: terraform destroy -auto-approve
-#        if: github.ref == 'refs/heads/main'
-
+      # Step 7: Apply the Terraform plan (only on the main branch)
       - name: Terraform Apply
         run: terraform apply -auto-approve
         if: github.ref == 'refs/heads/main'
+
+      ##########################################################################
+      # OPTIONAL: Destroy infrastructure (use with caution)
+      #
+      # This step will destroy **all** resources defined in the current state.
+      # Uncomment this block only if you are certain you want to tear down
+      # everything Terraform manages for this backend (eks/terraform.tfstate).
+      #
+      # Useful in test/sandbox environments — NOT recommended in production.
+      ##########################################################################
+      # - name: Terraform Destroy
+      #   run: terraform destroy -auto-approve
+      #   if: github.ref == 'refs/heads/main'
