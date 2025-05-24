@@ -13,7 +13,7 @@ permissions:
 # Set environment variables for AWS and Terraform backend configuration
 env:
   AWS_REGION: us-east-1
-  BUCKET_NAME: physicstutors-002                     # S3 bucket to store Terraform state
+  BUCKET_NAME: physicstutors-001                     # S3 bucket to store Terraform state
   TF_KEY: eks/terraform.tfstate                      # Path to the state file in the bucket
   TF_REGION: us-east-1                               # AWS region for the backend and resources
 
