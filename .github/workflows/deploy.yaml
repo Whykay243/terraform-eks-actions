@@ -1,44 +1,37 @@
 name: Deploy EKS via Terraform
 
-# Trigger the workflow on every push to the main branch
 on:
   push:
     branches: [main]
 
-# Permissions needed for GitHub OIDC authentication with AWS
 permissions:
   id-token: write
   contents: read
 
-# Set environment variables for AWS and Terraform backend configuration
 env:
   AWS_REGION: us-east-1
-  BUCKET_NAME: physicstutors-001                     # S3 bucket to store Terraform state
-  TF_KEY: eks/terraform.tfstate                      # Path to the state file in the bucket
-  TF_REGION: us-east-1                               # AWS region for the backend and resources
+  BUCKET_NAME: physicstutors-001
+  TF_KEY: eks/terraform.tfstate
+  TF_REGION: us-east-1
 
 jobs:
   terraform:
     name: Terraform Plan & Apply
-    runs-on: ubuntu-latest                           # Runner environment
+    runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout your source code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Configure AWS credentials using OIDC and IAM role
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::755852738025:role/Aws-Githubaction-Connection
           aws-region: ${{ env.AWS_REGION }}
 
-      # Step 3: Set up Terraform CLI
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # Step 4: Initialize Terraform with remote backend config
       - name: Terraform Init
         run: |
           terraform init \
@@ -46,28 +39,35 @@ jobs:
           -backend-config="key=${{ env.TF_KEY }}" \
           -backend-config="region=${{ env.TF_REGION }}"
 
-      # Step 5: Validate Terraform configuration files
       - name: Terraform Validate
         run: terraform validate
 
-      # Step 6: Run Terraform plan to preview infrastructure changes
+      - name: Import Existing Resources if Present
+        run: |
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
+          
+          # Import KMS alias if it exists
+          if aws kms list-aliases --query "Aliases[?AliasName=='alias/eks/app-eks-cluster']" --output text | grep -q 'alias/eks/app-eks-cluster'; then
+            echo "Importing existing KMS alias"
+            terraform import 'module.eks.module.kms.aws_kms_alias.this["cluster"]' arn:aws:kms:${{ env.AWS_REGION }}:$AWS_ACCOUNT_ID:alias/eks/app-eks-cluster || true
+          fi
+
+          # Import CloudWatch log group if it exists
+          if aws logs describe-log-groups --log-group-name-prefix "/aws/eks/app-eks-cluster/cluster" \
+            --query "logGroups[?logGroupName=='/aws/eks/app-eks-cluster/cluster']" \
+            --output text | grep -q '/aws/eks/app-eks-cluster/cluster'; then
+            echo "Importing existing CloudWatch log group"
+            terraform import 'module.eks.aws_cloudwatch_log_group.this[0]' /aws/eks/app-eks-cluster/cluster || true
+          fi
+
       - name: Terraform Plan
         run: terraform plan -out=tfplan.out
 
-      # Step 7: Apply the Terraform plan (only on the main branch)
       - name: Terraform Apply
         run: terraform apply -auto-approve
         if: github.ref == 'refs/heads/main'
 
-      ##########################################################################
-      # OPTIONAL: Destroy infrastructure (use with caution)
-      #
-      # This step will destroy **all** resources defined in the current state.
-      # Uncomment this block only if you are certain you want to tear down
-      # everything Terraform manages for this backend (eks/terraform.tfstate).
-      #
-      # Useful in test/sandbox environments — NOT recommended in production.
-      ##########################################################################
-      #- name: Terraform Destroy
-      # run: terraform destroy -auto-approve
-      #if: github.ref == 'refs/heads/main'
+      # Optional: Terraform Destroy (commented out for safety)
+      # - name: Terraform Destroy
+      #   run: terraform destroy -auto-approve
+      #   if: github.ref == 'refs/heads/main'
