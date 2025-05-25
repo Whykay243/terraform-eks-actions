@@ -68,6 +68,6 @@ jobs:
       #
       # Useful in test/sandbox environments — NOT recommended in production.
       ##########################################################################
-      - name: Terraform Destroy
-        run: terraform destroy -auto-approve
-        if: github.ref == 'refs/heads/main'
+      #- name: Terraform Destroy
+      # run: terraform destroy -auto-approve
+      #if: github.ref == 'refs/heads/main'
